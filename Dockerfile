@@ -1,5 +1,6 @@
 FROM rocker/shiny:4
-
+# Install R dependencies
+RUN R -e "install.packages(c('shiny', 'ggplot2', 'DT','caTools','readr','dplyr','tidyr','lubridate','grid','gridExtra','plotly','bslib','bsicons','ggdendro'))"
 # set permissions of the R library directory to be editable by shiny (997:997)
 # see https://github.com/SwissDataScienceCenter/renkulab-docker/blob/main/docker/r/Dockerfile
 ENV NB_UID=997
