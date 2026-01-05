@@ -2,7 +2,7 @@
 # Libraries, Tools and Data base Connection
 # ------------------------------------------------------------------------
 ## Clear the workspace
-rm(list=ls())
+# rm(list=ls())
 
 #load required libraries
 library(shiny)
@@ -69,7 +69,7 @@ dir <- function(df){
                          ifelse(df$a>=0&df$b<0,270+atan(abs(df$t))*180/pi,
                                 ifelse(df$a<0&df$b<0,270-atan(abs(df$t))*180/pi,
                                        ifelse(df$a<0&df$b>=0,90+atan(abs(df$t))*180/pi,NA)))),NA)
-
+  
   df$dir = round(df$dir,2)
   
   # direction with 180° shift
@@ -258,28 +258,28 @@ fill.gap <- function(dat,clim){
   
   #create complete time series
   dates <- df %>% select(date,datehom)
-  dates <- dates[-which(duplicated(dates)),]
+  dates <- dates[-which(duplicated(dates)),] %>% arrange(date)
   df <- df %>% select(point,datehom,vel2d)
-
+  
   pt  = unique(df$point)
   d   = unique(df$datehom)
   dfc = expand.grid(pt,d)
   colnames(dfc) = c('point','datehom')
   df = merge(dfc,df,by=c('point','datehom'),all=T) %>% arrange(point,datehom) 
   
+  #find all the gaps
+  gap = df[is.na(df$vel2d),]
+  
   #compute correlation matrix
   mat = spread(df,datehom,vel2d)
   row.names(mat) = mat$point
   mat = mat[,2:ncol(mat)]
   cm  = cor(t(mat),use='pairwise.complete.obs')
-
-  #find all the gaps
-  gap = df[is.na(df$vel2d),]
-
+  
   #select best correlator
   for(i in 1:nrow(gap)){
     g = gap[i,]
-
+    
     cv = cm[rownames(cm)==g$point,]
     cv = cv[cv<1]
     for(j in 1:length(cv)){
@@ -305,26 +305,28 @@ fill.gap <- function(dat,clim){
   }
   gap = b
   rm(b,i,g,cv,reg,cor)
-
+  
   #apply correlation threshold
   gap = gap[gap$cor>=clim,]
-
+  
   #fill the gap using linear model
   for(i in 1:nrow(gap)){
     g = gap[i,]
     l = lm(df$vel2d[df$point==g$point]~df$vel2d[df$point==g$reg])
     d = df$vel2d[df$point==g$reg&df$date==g$date]
-
+    
     gap$a[i]=l$coefficients[2]
     gap$b[i]=l$coefficients[1]
     gap$vel2d_fill[i] = round(gap$a[i]*d+gap$b[i],3)
     gap$fill_se[i] = round(summary(l)$sigma,3)
   }
-
+  
   fill = gap %>% select(point,datehom,vel2d_fill,reg,fill_se)
   fill = merge(dates,fill,by=c('datehom'),all=T)
   fill = na.omit(fill)
-  fill = fill[-which(duplicated(fill[,c(1,3)])),]
+  if (length(which(duplicated(fill[,c(1,3)])))>0){
+    fill = fill[-which(duplicated(fill[,c(1,3)])),]
+  }
   
   df = merge(dat,fill,by=c('date','point','datehom'),all=T) %>% arrange(point,date)
   df$vel2d_fill = ifelse(is.na(df$vel2d_fill),df$vel2d,df$vel2d_fill)
@@ -458,8 +460,8 @@ ui <- page_navbar(
                ,full_screen = T
                ,h5("Data overview")
                ,dataTableOutput('tab_vel'))
-             )
-
+  )
+  
   ,nav_panel('2. Trajectory overview'
              ,card(
                max_height = 500
@@ -486,7 +488,7 @@ ui <- page_navbar(
                ,full_screen = T
                ,h5("Point location:")
                ,plotlyOutput("TGS_point_coord",height = 400,width=500))
-             )
+  )
   ,nav_panel('3. Velocity overview'
              ,card(
                max_height = 700
@@ -494,7 +496,7 @@ ui <- page_navbar(
                ,h5("Horizontal velocities")
                ,plotOutput("TGS_hor_vel_pt",height=200,width=900)
                ,plotOutput("TGS_hor_vel_all",height=200,width=900))
-             )
+  )
   ,nav_panel('4. Data selection'
              ,accordion(
                open = c('1. Data completeness threshold')
@@ -505,7 +507,7 @@ ui <- page_navbar(
                                     ,cellArgs=list(style="padding: 1px")
                                     ,plotOutput("v_comp_plot")
                                     ,plotOutput("p_comp_plot")
-                                    ))
+                                  ))
                                 ,hr()
                                 ,fluidRow(
                                   splitLayout(
@@ -518,7 +520,7 @@ ui <- page_navbar(
                                     ,value_box(title='Keep'
                                                ,value=textOutput('f_comp_in')
                                                ,showcase = bs_icon('check2-square'))
-                                    )))
+                                  )))
                ,accordion_panel('2. Velocity threshold'
                                 ,fluidRow(
                                   splitLayout(
@@ -680,7 +682,7 @@ server <- function(input, output) {
     data$point <- as.character(data$point)
     return(data)
   })
-   
+  
   site_name <- reactive({
     inFile <- input$file1
     if (is.null(inFile)) return(NULL)
@@ -719,7 +721,7 @@ server <- function(input, output) {
     dat = vel(dat)
     #compute direction
     dat = dir(dat)
-
+    
     return(dat)
   })
   
@@ -740,34 +742,34 @@ server <- function(input, output) {
     d <- merge(df,p,by=c('date','point'),all=T)
     d$p_filter = ifelse(is.na(d$p_filter),0,1)
     df = d[d$p_filter==0&!is.na(d$vel2d),]
-
+    
     v  = f.vlim(df,vlim)  
     d  = merge(d,v,by=c('date','point'),all=T)
     d$v_filter = ifelse(is.na(d$v_filter),0,1)
     df = d[d$v_filter==0&d$p_filter==0&!is.na(d$vel2d),]
- 
+    
     di = f.dir(df,dlim)
     d  = merge(d,di,by=c('date','point'),all=T)
     d$d_filter = ifelse(is.na(d$d_filter),0,1)
     df = d[d$v_filter==0&d$p_filter==0&d$d_filter==0&!is.na(d$vel2d),]
-  
+    
     vo = f.vout(df,vdev)
     d  = merge(d,vo,by=c('date','point'),all=T)
     d$vo_filter = ifelse(is.na(d$vo_filter),0,1)
     df = d[d$v_filter==0&d$p_filter==0&d$d_filter==0&d$vo_filter==0&!is.na(d$vel2d),]
- 
+    
     vc = f.vch(df,vcdev)
     d  = merge(d,vc,by=c('date','point'),all=T)
     d$vc_filter = ifelse(is.na(d$vc_filter),0,1)
     df = d[d$v_filter==0&d$p_filter==0&d$d_filter==0&d$vo_filter==0&d$vc_filter==0,]
-
+    
     p1  = f.comp(df,dcomp)
     p1$p1_filter = p1$p_filter
     p1 = p1 %>% select(-p_filter)
     d  = merge(d,p1,by=c('date','point'),all=T)
     d$p1_filter = ifelse(is.na(d$p1_filter),0,1)
     df = d[d$v_filter==0&d$p_filter==0&d$d_filter==0&d$vo_filter==0&d$vc_filter==0&d$p1_filter==0,]
-
+    
     d = d %>% arrange(point,date)
     return(d)
   })
@@ -792,8 +794,8 @@ server <- function(input, output) {
     d$p_filter = ifelse(is.na(d$p_filter),0,1)
     df = d[d$p_filter==0,]
     s.p = data.frame('filter'='p_filter','tot'=nrow(d),'out'=nrow(p),'in'=nrow(df))
-      
-      
+    
+    
     v  = f.vlim(df,vlim)  
     d  = merge(d,v,by=c('date','point'),all=T)
     d$v_filter = ifelse(is.na(d$v_filter),0,1)
@@ -844,7 +846,7 @@ server <- function(input, output) {
   set_cluster <- reactive({
     #apply filter
     df  <- set_filter()
-
+    
     #apply gap filling
     df <- fill.gap(df,clim = input$clim)
     
@@ -899,7 +901,7 @@ server <- function(input, output) {
       vel3d_med = median(vel3d,na.rm=T),
       vel3d_sd = sd(vel2d,na.rm=T),
       clust_points = n(),
-      ) %>% ungroup()
+    ) %>% ungroup()
     return(dfm)
   }) 
   
@@ -1043,9 +1045,9 @@ server <- function(input, output) {
   
   # data completeness section
   output$p_comp_plot <- renderPlot({
-     #apply filter
+    #apply filter
     df  <- data_filter()
-
+    
     f = c('p_filter')
     p = f_position_plot(df,f)
     return(p)
@@ -1164,7 +1166,7 @@ server <- function(input, output) {
     #compute relative velocity
     df <- df %>% group_by(point) %>% mutate(
       rel2d = vel2d/mean(vel2d,na.rm = T))
- 
+    
     #plot layout
     cols = c('velocity outlier'='limegreen','keep'='black','other filter'='grey')
     
@@ -1253,7 +1255,7 @@ server <- function(input, output) {
       slice(rep(1:n(),each=2)) %>% mutate(vel2d=lead(vel2d,1),group = point)
     dop <- d.out %>% arrange(point,datehom) %>% group_by(point) %>% 
       slice(rep(1:n(),each=2)) %>% mutate(vel2d=lead(vel2d,1),group = point)
-
+    
     y_max <- round(max(df$vel2d,na.rm=T)*1.10,digits = 3)
     y.axis <- scale_y_continuous(limits=c(0,y_max), expand=c(0,0))
     x.axis <- scale_x_date(date_breaks='2 year', date_labels="%Y",limits = c(min(dip$datehom,na.rm=T),max(dip$datehom,na.rm=T)),expand = c(0,0))
@@ -1324,20 +1326,19 @@ server <- function(input, output) {
     df <- set_filter()
     fill <- fill.gap(df,clim=input$clim) %>% filter(point==input$tgs_gap)
     reg  <- df %>% filter(point%in%unique(fill$reg))
-
+    
     #duplicate data for step plot
     dup <- fill %>% arrange(datehom) %>% slice(rep(1:n(), each = 2)) %>%mutate(vel2d = lead(vel2d,1),
-                                                                             vel2d_fill = lead(vel2d_fill,1))
+                                                                               vel2d_fill = lead(vel2d_fill,1))
     dupr <- reg %>% arrange(datehom) %>% group_by(point) %>% slice(rep(1:n(), each = 2)) %>%mutate(vel2d = lead(vel2d,1))
     
     dup <- rbind(dup[1,],dup)
-    dup$datehom[1]=dup$datehom[1]-365
-    dupr <- rbind(dupr[1,],dupr)
-    dupr$datehom[1]=dupr$datehom[1]-365
+    dup$datehom[1]=dup$datehom[1]-366
+    dupr <- dupr[2:nrow(dupr),]
     
     # define plot aestetics
     cols = c('measured'='black','fill'='red','regressor'='blue')
-    x.axis <- scale_x_date(date_breaks='2 year', date_labels="%Y",expand= c(0,0),limits = c(min(dup$datehom,na.rm=T)+365,max(dup$datehom,na.rm=T)))
+    x.axis <- scale_x_date(date_breaks='2 year', date_labels="%Y",expand= c(0,0),limits = c(min(dup$datehom,na.rm=T),max(dup$datehom,na.rm=T)))
     
     p <- ggplot(dup)+theme_tgs+
       geom_line(data=dupr,aes(datehom,vel2d,group=point,col='regressor'),linewidth=1)+
@@ -1366,7 +1367,7 @@ server <- function(input, output) {
   output$dendro_plot <- renderPlot({
     df <- set_filter()
     df <- fill.gap(df,clim = input$clim)
-
+    
     #perform clustering
     cl <- cluster(df)
     cl <- as.dendrogram(cl)
@@ -1478,7 +1479,7 @@ server <- function(input, output) {
       slice_head() %>% mutate(datehom = datehom -365)
     
     dupm <- rbind(dupm1,dupm) %>% arrange(cluster,datehom)
-
+    
     x.axis <- scale_x_date(date_breaks='2 year', date_labels="%Y",expand= c(0,0),,limits = c(min(dupm$datehom,na.rm=T),max(dupm$datehom,na.rm=T)))
     
     # setup the general plot
@@ -1489,7 +1490,7 @@ server <- function(input, output) {
       xlab(NULL)+ylab('horizontal surface velocity (m/a)')+x.axis
     return(plot1)
   })
-
+  
   output$tab_clust_stat <- renderDataTable({
     df <- stat_cluster()
     
